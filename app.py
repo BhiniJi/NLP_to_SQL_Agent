@@ -19,6 +19,7 @@ load_dotenv()
 CHAT_FILE = "chat_history.json"
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, streaming=True)
 
+# Configure Streamlit page settings
 st.set_page_config(
     page_title="HR SQL Chatbot",
     page_icon = "🤖",
@@ -30,6 +31,7 @@ st.set_page_config(
 st.title("🤖 Auctions SQL Chatbot")
 st.markdown("Ask questions About Auctions")
 
+# Extract raw text from all pages of the uploaded PDF
 def extract_pdf_text(pdf_file):
 
     reader = PdfReader(pdf_file)
@@ -44,7 +46,8 @@ def extract_pdf_text(pdf_file):
             text += page_text + "\n"
 
     return text
-
+    
+# Use LLM to convert unstructured auction notice text into structured JSON fields
 def extract_pdf_fields(text):
 
     prompt = f"""
@@ -105,15 +108,17 @@ def extract_pdf_fields(text):
 
     return json.loads(content)
 
-
+# Allow users to upload one or more auction notice PDFs
 uploaded_pdfs = st.file_uploader(
     "Upload PDF",
     type=["pdf"],
     accept_multiple_files=True
 )
 
+# Create SQLite database connection
 engine = create_engine("sqlite:///company.db")
 
+# Process each uploaded PDF and store extracted fields into the auction_notices table
 if uploaded_pdfs:
 
     for pdf in uploaded_pdfs:
@@ -128,6 +133,7 @@ if uploaded_pdfs:
 
         df = pd.DataFrame([resume_data])
 
+        # Convert extracted JSON data into DataFrame and insert records into SQLite
         df.to_sql(
             name="auction_notices",
             con=engine,
@@ -136,9 +142,11 @@ if uploaded_pdfs:
         )
 
         st.success(f"{len(uploaded_pdfs)} PDFs added successfully")
-
+        
+# Connect LangChain with SQLite database so the agent can generate and execute SQL queries
 db = SQLDatabase(engine=engine, include_tables=["auction_notices"])
 
+# List of all database columns passed to the LLM to improve SQL query generation accuracy
 columns_list = [
     "property_1_description",
     "property_2_description",
@@ -170,6 +178,8 @@ columns_list = [
     "publication_date_of_possession_notice",
     "outstanding_dues"
 ]
+
+# Load previous chat sessions from disk if available
 if "all_chats" not in st.session_state:
     if os.path.exists(CHAT_FILE):
         with open(CHAT_FILE, "r") as f:
@@ -209,6 +219,7 @@ for chat_name, chat_data in st.session_state.all_chats.items():
             )
     chat_data["memory"] = memory
 
+# Save all chats to JSON file for persistence
 def save_chats():
     chats_to_save = {}
     for chat_name, chat_data in st.session_state.all_chats.items():
@@ -242,7 +253,9 @@ current_chat_data = st.session_state.all_chats[
 messages = current_chat_data["messages"]
 memory = current_chat_data.get("memory")
 
-prompt = ChatPromptTemplate.from_messages([("system", """You are a helpful HR assistant with access to the employee database
+
+# System prompt that instructs the SQL agent how to query auction data safely and accurately
+prompt = ChatPromptTemplate.from_messages([("system", """You are a helpful HR assistant with access to the Auction database
 
                                             Database Schema Context:
                                             - The active table is named: "auction_notices"
@@ -267,12 +280,20 @@ prompt = ChatPromptTemplate.from_messages([("system", """You are a helpful HR as
                                             MessagesPlaceholder(variable_name="agent_scratchpad"),
 ])
 
+# Create LangChain SQL Agent capable of:
+# 1. Understanding user questions
+# 2. Generating SQL queries
+# 3. Executing queries
+# 4. Returning natural language answers
+
 agent_executor = create_sql_agent(llm=llm, db=db, agent_type="openai-tools", verbose=True, prompt=prompt, memory=memory, handle_parsing_errors=True)
 
+# Display previous conversation messages when a chat session is opened
 for message in messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+# Capture user question from chat input box
 user_query = st.chat_input("Ask Your Question")
 
 if len(messages) >= 10:
@@ -288,7 +309,8 @@ if user_query:
         "role": "user",
         "content": user_query
     })
-
+    
+   # Automatically generate a meaningful chat title based on the first user query
     if st.session_state.current_chat.lower().startswith("chat") and len(messages) == 1:
         title_prompt = f"""
         Generate a short chat title (max 4 words) for:
@@ -307,6 +329,7 @@ if user_query:
 
         st.session_state.current_chat = new_chat_name
 
+    # Execute SQL agent and fetch answer from database
     with st.chat_message("assistant"):
         with st.spinner("Thinking"):
             response = agent_executor.invoke({
@@ -319,13 +342,14 @@ if user_query:
 
             full_text = ""
 
+            # Simulate streaming effect by displaying answer word-by-word
             for word in final_answer.split():
                 full_text += word + " "
                 placeholder.text(full_text)
                 time.sleep(0.08)
 
 
-            
+    # Store latest user and assistant messages inside conversation memory
     memory.chat_memory.add_user_message(user_query)
     memory.chat_memory.add_ai_message(final_answer)
 
