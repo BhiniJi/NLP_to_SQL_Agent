@@ -14,7 +14,6 @@ from langchain_classic.memory import ConversationBufferMemory
 from pypdf import PdfReader
 import time
 import json
-
 load_dotenv()
 
 CHAT_FILE = "chat_history.json"
@@ -28,8 +27,8 @@ st.set_page_config(
 
 )
 
-st.title("🤖 HR SQL Chatbot")
-st.markdown("Ask questions from Employee Database")
+st.title("🤖 Auctions SQL Chatbot")
+st.markdown("Ask questions About Auctions")
 
 def extract_pdf_text(pdf_file):
 
